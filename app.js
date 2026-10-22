@@ -112,6 +112,7 @@ const createInitialState = () => ({
   items: [...weapons.map(n => createEquipment('weapon', n)), ...shields.map(n =>
     createEquipment('shield', n))]
 });
+const equipmentIds = new Set(createInitialState().items.map(item => item.id));
 const isCollected = v => v !== null;
 const countCollectedVariants = i => Number(i.normal) + Number(isCollected(i.blue)) + Number(
   isCollected(i.gold));
@@ -152,6 +153,7 @@ function validateBackup(data) {
       blue: i.blue,
       gold: i.gold
     };
+    if (!equipmentIds.has(clean.id)) throw Error('武器38種・盾33種以外の装備は取り込めません。');
     if (seen.has(clean.id)) throw Error('同じ装備が重複しています。');
     seen.add(clean.id);
     return clean;
@@ -159,7 +161,8 @@ function validateBackup(data) {
   return {
     version: 1,
     updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : null,
-    items
+    // 一部の装備だけを含むバックアップでも、一覧は固定の71種に揃える。
+    items: createInitialState().items.map(item => items.find(saved => saved.id === item.id) ?? item)
   };
 }
 
@@ -439,28 +442,6 @@ $$('dialog').forEach(d => d.addEventListener('click', e => {
   }
 }));
 $('#settings-btn').onclick = () => show('#settings-dialog');
-$('#add-btn').onclick = () => {
-  $('#add-type').value = type;
-  $('#add-name').value = '';
-  $('#add-error').textContent = '';
-  show('#add-dialog');
-};
-$('#add-form').onsubmit = e => {
-  e.preventDefault();
-  const t = $('#add-type').value,
-    n = $('#add-name').value.trim();
-  if (!n || state.items.some(i => i.type === t && i.name === n)) {
-    $('#add-error').textContent = '名前が空、または同じ装備がすでにあります。';
-    return;
-  }
-  mutate(() => state.items.push(createEquipment(t, n)), '装備を追加しました');
-  type = t;
-  filter = 'all';
-  query = '';
-  $('#search').value = '';
-  render();
-  $('#add-dialog').close();
-};
 
 // JSONバックアップとCSVの書き出し・復元
 function download(content, name, mime) {
@@ -562,6 +543,8 @@ function parseImport(text) {
     if (!isCollectedMarker(r[2]) && !isUncollectedMarker(r[2])) throw Error(
       `${index+1} 行目：通常のチェック値を確認してください。`);
     const item = createEquipment(t === '武器' || t === 'weapon' ? 'weapon' : 'shield', name);
+    if (!equipmentIds.has(item.id)) throw Error(
+      `${index+1} 行目：武器38種・盾33種に含まれる種別と装備名を指定してください。`);
     item.normal = isCollectedMarker(r[2]);
     for (const [col, k] of [
         [3, 'blue'],
@@ -588,12 +571,10 @@ function mergeItems(base, imports) {
   const copy = structuredClone(base);
   for (const i of imports) {
     const old = copy.find(x => x.id === i.id);
-    if (!old) copy.push(i);
-    else {
-      old.normal = old.normal || i.normal;
-      old.blue = highestBonus(old.blue, i.blue);
-      old.gold = highestBonus(old.gold, i.gold);
-    }
+    if (!old || !equipmentIds.has(i.id)) throw Error('収録されていない装備は取り込めません。');
+    old.normal = old.normal || i.normal;
+    old.blue = highestBonus(old.blue, i.blue);
+    old.gold = highestBonus(old.gold, i.gold);
   }
   return copy;
 }
@@ -622,10 +603,8 @@ $('#csv-file').onchange = async e => {
 $('#preview-import').onclick = () => {
   try {
     pendingImport = parseImport($('#import-text').value);
-    const merged = mergeItems(state.items, pendingImport);
-    if (merged.length > 2000) throw Error('装備数が上限の2000種を超えます。');
     $('#import-preview').innerHTML =
-      `<div class="import-preview">${pendingImport.length} 行を確認しました。新しい装備：${merged.length-state.items.length} 種。既存の最高補正は保持します。</div><button class="primary wide" id="confirm-import">この内容を取り込む</button>`;
+      `<div class="import-preview">${pendingImport.length} 行を確認しました。既存の装備の記録を更新し、最高補正は保持します。</div><button class="primary wide" id="confirm-import">この内容を取り込む</button>`;
     $('#confirm-import').onclick = () => {
       mutate(() => state.items = mergeItems(state.items, pendingImport), 'スプシの記録を取り込みました');
       pendingImport = null;

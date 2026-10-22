@@ -127,9 +127,6 @@
     <section aria-label="装備一覧" class="grid" id="items">
     </section>
     <div class="bottom">
-     <button id="add-btn">
-      ＋ 装備を追加
-     </button>
      <button id="import-btn">
       スプシから取り込む
      </button>
@@ -269,40 +266,8 @@
    <div id="import-preview">
    </div>
    <p class="helper">
-    既存の記録と統合し、青・金は高い値を優先します。未登録の装備名は追加されます。空欄で既存の記録が消えることはありません。
+    既存の記録と統合し、青・金は高い値を優先します。取り込めるのは武器38種・盾33種の記録のみです。空欄で既存の記録が消えることはありません。
    </p>
-  </dialog>
-  <dialog aria-labelledby="add-title" id="add-dialog">
-   <div class="dialog-head">
-    <h2 id="add-title">
-     装備を追加
-    </h2>
-    <button aria-label="閉じる" class="close" data-close="">
-     ×
-    </button>
-   </div>
-   <form id="add-form">
-    <label class="field">
-     種類
-     <select id="add-type">
-      <option value="weapon">
-       武器
-      </option>
-      <option value="shield">
-       盾
-      </option>
-     </select>
-    </label>
-    <label class="field">
-     装備名
-     <input autocomplete="off" id="add-name" maxlength="60" required=""/>
-    </label>
-    <p class="error" id="add-error">
-    </p>
-    <button class="primary wide" type="submit">
-     手帖に追加する
-    </button>
-   </form>
   </dialog>
   <div aria-live="polite" id="toast" role="status">
   </div>

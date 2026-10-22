@@ -590,25 +590,6 @@ textarea {
   color: var(--ink)
 }
 
-label.field {
-  display: block;
-  margin: 15px 0;
-  font-size: 12px
-}
-
-label.field input,
-label.field select {
-  display: block;
-  margin-top: 7px;
-  width: 100%;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: white;
-  color: var(--ink);
-  font-size: 16px
-}
-
 .settings-section {
   padding: 18px 0;
   border-top: 1px solid var(--line)
