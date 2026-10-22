@@ -6,7 +6,7 @@
 
 ## 機能
 
-- 武器38種・盾33種を初期収録。装備名の追加にも対応
+- 武器38種・盾33種の固定リストで収集管理
 - 通常・青神器・金神器をそれぞれ収集管理
 - 青神器は +5〜+10、金神器は +3〜+8 の最高補正値を記録
 - 「収集済み・補正値は未確認」と未収集を区別
@@ -47,7 +47,7 @@ python -m http.server 8000
 
 ## 公開
 
-Cloudflare Pagesなど、静的ファイルを配信できるサービスで公開できます。公開に必要なアプリのファイルは `index.html`、`app.js`、`icon.svg` の3つです。ビルド処理はありません。
+Cloudflare Pagesなど、静的ファイルを配信できるサービスで公開できます。公開に必要なアプリのファイルは `index.html`、`styles.css`、`app.js`、`icon.svg` の4つです。ビルド処理はありません。
 
 - [Cloudflare Pages：Git連携](https://developers.cloudflare.com/pages/get-started/git-integration/)
 - [Cloudflare Pages：直接アップロード](https://developers.cloudflare.com/pages/get-started/direct-upload/)
@@ -78,6 +78,7 @@ Cloudflare Pagesなど、静的ファイルを配信できるサービスで公�
 - 補正値が不明な収集済み神器は `○`
 - 空欄・`FALSE`・`未収集` は未収集
 - 既存の記録と統合し、神器は高い値を優先します
+- 収録済みの武器38種・盾33種以外の装備名は取り込めません
 
 ## 参照元
 
