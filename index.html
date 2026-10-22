@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ja">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
+  <meta content="#f6f3eb" name="theme-color"/>
+  <meta content="風来のシレン6の装備かけをスマホで記録。通常・青神器・金神器の収集と最高補正値を管理できる個人用手帖です。" name="description"/>
+  <title>
+   装備かけ手帖 | シレン6
+  </title>
+  <link href="icon.svg" rel="icon" type="image/svg+xml"/>
+  <link href="icon.svg" rel="apple-touch-icon"/>
+  <link href="styles.css" rel="stylesheet"/>
+ </head>
+ <body>
+  <div class="wrap">
+   <header class="topbar">
+    <div class="brand">
+     <div aria-hidden="true" class="brand-icon">
+      <svg fill="none" height="22" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" width="22">
+       <path d="M4 5h16M6 5v15m12-15v15M4 11h16M10 3v5m4-5v5M8 15l4-2 4 2v4H8z">
+       </path>
+      </svg>
+     </div>
+     <div>
+      <small>
+       SHIREN 6 · COLLECTION
+      </small>
+      <strong>
+       装備かけ手帖
+      </strong>
+     </div>
+    </div>
+    <button aria-label="保存・設定を開く" class="quiet" id="settings-btn">
+     保存・設定
+     <span aria-hidden="true">
+      ⚙
+     </span>
+    </button>
+   </header>
+   <main>
+    <section class="hero">
+     <div>
+      <div class="eyebrow">
+       風来のシレン6 / 個人用コレクション
+      </div>
+      <h1>
+       旅の収穫を、ひとつずつ。
+      </h1>
+      <p>
+       集めた装備と、とっておきの神器を記録。
+       <br/>
+       次の冒険で探す一品が、すぐわかる。
+      </p>
+     </div>
+     <div aria-hidden="true" class="stamp">
+      <span>
+       収集
+      </span>
+      <small>
+       旅の手帖
+      </small>
+     </div>
+    </section>
+    <div id="storage-warning" role="alert">
+    </div>
+    <section aria-label="収集状況" class="overview" id="overview">
+    </section>
+    <div class="tools">
+     <div aria-label="装備の種類" class="tabs" role="tablist">
+      <button aria-selected="true" data-type="weapon" role="tab">
+       ⚔ 武器
+       <small id="weapon-count">
+       </small>
+      </button>
+      <button aria-selected="false" data-type="shield" role="tab">
+       ◇ 盾
+       <small id="shield-count">
+       </small>
+      </button>
+     </div>
+     <label class="search">
+      <svg aria-hidden="true" fill="none" height="17" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24" width="17">
+       <circle cx="10.5" cy="10.5" r="6.5">
+       </circle>
+       <path d="m16 16 5 5">
+       </path>
+      </svg>
+      <span class="sr">
+       装備名で検索
+      </span>
+      <input autocomplete="off" id="search" placeholder="装備名で検索" type="search"/>
+     </label>
+    </div>
+    <div aria-label="絞り込み" class="filters">
+     <button aria-pressed="true" class="chip" data-filter="all">
+      すべて
+     </button>
+     <button aria-pressed="false" class="chip" data-filter="missing">
+      未収集あり
+     </button>
+     <button aria-pressed="false" class="chip" data-filter="improve">
+      最高補正を目指す
+     </button>
+     <button aria-pressed="false" class="chip" data-filter="complete">
+      3種収集済み
+     </button>
+    </div>
+    <div class="list-heading">
+     <strong id="list-title">
+      武器の手帖
+     </strong>
+     <span id="list-count">
+     </span>
+    </div>
+    <p class="legend">
+     通常はタップでチェック。青・金はタップで最高補正を記録。
+     <span class="blue">
+      青 +10
+     </span>
+     /
+     <span class="gold">
+      金 +8
+     </span>
+     で ★
+    </p>
+    <section aria-label="装備一覧" class="grid" id="items">
+    </section>
+    <div class="bottom">
+     <button id="add-btn">
+      ＋ 装備を追加
+     </button>
+     <button id="import-btn">
+      スプシから取り込む
+     </button>
+    </div>
+   </main>
+   <footer class="footer">
+    <div>
+     <span class="save-state" id="save-state">
+      ● このブラウザに自動保存
+     </span>
+     <br/>
+     端末間の同期はありません。機種変更前にバックアップを。
+    </div>
+    <div>
+     風来のシレン6 非公式・個人用ツール
+     <br/>
+     初期装備リスト：
+     <a href="https://gif-hara.github.io/shiren6_equipment_rack/" rel="noopener" target="_blank">
+      装備品かけチェック
+     </a>
+    </div>
+   </footer>
+  </div>
+  <dialog aria-labelledby="edit-title" id="edit-dialog">
+   <div class="dialog-head">
+    <h2 id="edit-title">
+    </h2>
+    <button aria-label="閉じる" class="close" data-close="">
+     ×
+    </button>
+   </div>
+   <p class="dialog-sub" id="edit-sub">
+   </p>
+   <div class="number-grid" id="numbers">
+   </div>
+   <button class="wide" id="unknown-btn">
+    収集済み・補正値はあとで
+   </button>
+   <div class="row">
+    <button class="quiet" id="correction-btn">
+     記録を修正する
+    </button>
+   </div>
+   <p class="helper" id="edit-help">
+    入手した補正値を選ぶと、これまでの最高値だけを残します。
+   </p>
+  </dialog>
+  <dialog aria-labelledby="settings-title" id="settings-dialog">
+   <div class="dialog-head">
+    <h2 id="settings-title">
+     保存と手帖のこと
+    </h2>
+    <button aria-label="閉じる" class="close" data-close="">
+     ×
+    </button>
+   </div>
+   <div class="settings-section">
+    <h3>
+     データのバックアップ
+    </h3>
+    <p>
+     記録はこの端末の、このブラウザに保存されます。ブラウザのデータ削除や端末の故障に備えて保存しておけます。
+    </p>
+    <div class="row">
+     <button class="primary" id="export-json">
+      バックアップ保存
+     </button>
+     <button id="restore-btn">
+      復元する
+     </button>
+    </div>
+    <button class="wide" id="export-csv">
+     スプシ用CSVを書き出す
+    </button>
+    <input accept=".json,application/json" hidden="" id="restore-file" type="file"/>
+    <div id="restore-preview">
+    </div>
+   </div>
+   <div class="settings-section">
+    <h3>
+     スマホからすぐ開く
+    </h3>
+    <p>
+     Safariの共有メニュー、またはChromeのメニューから「ホーム画面に追加」を選ぶと便利です。ログインや会員登録は不要です。収集記録は、この端末のこのブラウザだけに保存されます。
+    </p>
+   </div>
+   <div class="settings-section">
+    <h3>
+     記録のルール
+    </h3>
+    <p>
+     通常・青・金をそれぞれ1枠として集計。青は +5〜+10、金は +3〜+8。神器の補正値を記録する手帖です。通常の強化値（+99など）とは別に管理してください。
+    </p>
+    <p>
+     旧版で保存された最低値未満の数値は、収集済みのまま「補正未確認」に移行します。
+    </p>
+    <p>
+     補正値の出典：
+     <a href="https://eminaemanon.hatenablog.com/entry/2024/06/23/%E3%80%90%E3%82%B7%E3%83%AC%E3%83%B36%E3%80%91%E7%A5%9E%E5%99%A8%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6%E3%81%AE%E8%AA%BF%E6%9F%BB" rel="noopener" target="_blank">
+      神器についての調査
+     </a>
+    </p>
+    <p>
+     「収集済み・補正値はあとで」は ✓ で表示。低い補正値を入手しても最高値は下がりません。誤入力は「記録を修正する」で直せます。
+    </p>
+   </div>
+  </dialog>
+  <dialog aria-labelledby="import-title" id="import-dialog">
+   <div class="dialog-head">
+    <h2 id="import-title">
+     スプシから取り込む
+    </h2>
+    <button aria-label="閉じる" class="close" data-close="">
+     ×
+    </button>
+   </div>
+   <p class="dialog-sub">
+    下の5列に並べたセルをコピーして貼り付けてください。1行目の見出しは省略できます。CSVファイルにも対応しています。
+   </p>
+   <p class="helper">
+    種別 / 装備名 / 通常 / 青神器 / 金神器
+    <br/>
+    例：武器　木刀　TRUE　10　8
+    <br/>
+    通常は TRUE・1・○・✓。青と金は数値、値が不明なら ○。青は +5〜+10、金は +3〜+8。空欄・FALSE・未収集 は未収集です。
+   </p>
+   <textarea aria-label="スプシのセルを貼り付け" id="import-text" placeholder="種別	装備名	通常	青神器	金神器"></textarea>
+   <div class="row">
+    <button id="csv-file-btn">
+     CSVを選ぶ
+    </button>
+    <button class="primary" id="preview-import">
+     内容を確認
+    </button>
+   </div>
+   <input accept=".csv,.tsv,text/csv,text/tab-separated-values" hidden="" id="csv-file" type="file"/>
+   <div id="import-preview">
+   </div>
+   <p class="helper">
+    既存の記録と統合し、青・金は高い値を優先します。未登録の装備名は追加されます。空欄で既存の記録が消えることはありません。
+   </p>
+  </dialog>
+  <dialog aria-labelledby="add-title" id="add-dialog">
+   <div class="dialog-head">
+    <h2 id="add-title">
+     装備を追加
+    </h2>
+    <button aria-label="閉じる" class="close" data-close="">
+     ×
+    </button>
+   </div>
+   <form id="add-form">
+    <label class="field">
+     種類
+     <select id="add-type">
+      <option value="weapon">
+       武器
+      </option>
+      <option value="shield">
+       盾
+      </option>
+     </select>
+    </label>
+    <label class="field">
+     装備名
+     <input autocomplete="off" id="add-name" maxlength="60" required=""/>
+    </label>
+    <p class="error" id="add-error">
+    </p>
+    <button class="primary wide" type="submit">
+     手帖に追加する
+    </button>
+   </form>
+  </dialog>
+  <div aria-live="polite" id="toast" role="status">
+  </div>
+  <script src="app.js">
+  </script>
+ </body>
+</html>
