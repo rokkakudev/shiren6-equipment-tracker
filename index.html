@@ -202,7 +202,11 @@
      スプシ用CSVを書き出す
     </button>
     <input accept=".json,application/json" hidden="" id="restore-file" type="file"/>
-    <div id="restore-preview">
+    <div class="restore-drop-zone" id="restore-drop-zone">
+     JSONバックアップをここにドロップ
+     <span>または「復元する」からファイルを選択</span>
+    </div>
+    <div aria-live="polite" id="restore-preview">
     </div>
    </div>
    <div class="settings-section">
