@@ -471,28 +471,97 @@ $('#export-csv').onclick = () => {
   download('\ufeff' + rows.map(r => r.map(csvQuote).join(',')).join('\r\n'),
     'shiren6-collection-' + date() + '.csv', 'text/csv;charset=utf-8');
 };
-$('#restore-btn').onclick = () => $('#restore-file').click();
-$('#restore-file').onchange = async e => {
-  const file = e.target.files[0];
-  if (!file) return;
+const restoreFile = $('#restore-file'),
+  restorePreview = $('#restore-preview'),
+  restoreDropZone = $('#restore-drop-zone'),
+  settingsDialog = $('#settings-dialog');
+let restoreAttempt = 0,
+  dragDepth = 0;
+
+function clearRestore() {
+  restoreAttempt++;
+  pendingRestore = null;
+  restorePreview.replaceChildren();
+  restorePreview.className = '';
+  restoreFile.value = '';
+}
+function resetRestoreDrag() {
+  dragDepth = 0;
+  restoreDropZone.classList.remove('is-dragging');
+}
+async function previewRestore(files, hasDirectory = false) {
+  clearRestore();
+  const attempt = restoreAttempt;
   try {
+    if (hasDirectory) throw Error('フォルダは復元できません。JSONファイルを1つ選んでください。');
+    if (files.length !== 1) throw Error('JSONファイルを1つ選んでください。');
+    const file = files[0];
+    if (!/\.json$/i.test(file.name)) throw Error('JSONファイルを選んでください。');
     if (file.size > 2000000) throw Error('ファイルが大きすぎます。');
-    pendingRestore = validateBackup(JSON.parse(await file.text()));
-    $('#restore-preview').innerHTML =
+    const data = JSON.parse(await file.text());
+    if (attempt !== restoreAttempt) return;
+    pendingRestore = validateBackup(data);
+    restorePreview.innerHTML =
       `<div class="import-preview">${pendingRestore.items.length} 種のバックアップを読み込みました。現在の記録をすべて置き換えます。</div><button class="wide primary" id="confirm-restore">このバックアップで復元する</button>`;
     $('#confirm-restore').onclick = () => {
+      if (attempt !== restoreAttempt || !pendingRestore) return;
       storageReady = true;
       $('#storage-warning').style.display = 'none';
       mutate(() => state = pendingRestore, 'バックアップを復元しました');
-      $('#restore-preview').replaceChildren();
-      pendingRestore = null;
+      clearRestore();
     };
   } catch (err) {
-    $('#restore-preview').textContent = err.message;
-    $('#restore-preview').className = 'error';
+    if (attempt !== restoreAttempt) return;
+    restorePreview.textContent = err instanceof SyntaxError ?
+      'JSONファイルの形式が正しくありません。' : err.message;
+    restorePreview.className = 'error';
   }
-  e.target.value = '';
+}
+$('#restore-btn').onclick = () => {
+  clearRestore();
+  restoreFile.click();
 };
+restoreFile.onchange = e => {
+  // Copy the FileList before clearing the input, so the same file can be selected again.
+  const files = Array.from(e.target.files);
+  if (files.length) previewRestore(files);
+};
+const hasDraggedFiles = e => Array.from(e.dataTransfer.types).includes('Files');
+restoreDropZone.addEventListener('dragenter', e => {
+  if (!hasDraggedFiles(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  restoreDropZone.classList.add('is-dragging');
+});
+restoreDropZone.addEventListener('dragleave', e => {
+  if (!hasDraggedFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) resetRestoreDrag();
+});
+restoreDropZone.addEventListener('drop', e => {
+  if (!hasDraggedFiles(e)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  resetRestoreDrag();
+  const items = Array.from(e.dataTransfer.items);
+  const hasDirectory = items.some(item => item.kind === 'file' &&
+    typeof item.webkitGetAsEntry === 'function' && item.webkitGetAsEntry()?.isDirectory);
+  previewRestore(Array.from(e.dataTransfer.files), hasDirectory);
+});
+// Prevent file drops elsewhere in the dialog from navigating away from the app.
+settingsDialog.addEventListener('dragover', e => {
+  if (hasDraggedFiles(e)) e.preventDefault();
+});
+settingsDialog.addEventListener('drop', e => {
+  if (hasDraggedFiles(e)) {
+    e.preventDefault();
+    resetRestoreDrag();
+  }
+});
+settingsDialog.addEventListener('close', () => {
+  resetRestoreDrag();
+  clearRestore();
+});
 
 // CSV / TSVの解析と、既存記録を保持する取り込み
 function parseRows(text) {
