@@ -1,0 +1,253 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>JSON復元・安全性テスト</title>
+<style>
+  body { font: 15px sans-serif; }
+  iframe { width: 450px; height: 700px; float: right; }
+  li { line-height: 1.8; }
+  .pass { color: green; }
+  .fail { color: red; }
+</style>
+<h1>JSON復元・安全性テスト</h1>
+<p id="summary">実行中</p>
+<p>起動時の検証: <a href="startup.html?case=deep">深いJSON</a>、
+<a href="startup.html?case=wide">多数の要素</a>、
+<a href="startup.html?case=proto">プロトタイプキー</a>、
+<a href="startup.html?case=legacy">旧形式の移行</a>（各リンクを開いて結果を確認）</p>
+<ol id="results"></ol>
+<iframe src="index.html"></iframe>
+<script>
+const frame = document.querySelector('iframe');
+const results = document.querySelector('#results');
+let passed = 0;
+let failed = 0;
+
+function check(condition, name) {
+  const li = document.createElement('li');
+  li.textContent = `${condition ? 'PASS' : 'FAIL'}: ${name}`;
+  li.className = condition ? 'pass' : 'fail';
+  results.append(li);
+  if (condition) passed++;
+  else {
+    failed++;
+    throw Error(name);
+  }
+}
+
+const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+async function until(test) {
+  for (let i = 0; i < 100; i++) {
+    if (test()) return;
+    await tick();
+  }
+  throw Error('Timed out');
+}
+
+frame.onload = async () => {
+  try {
+    const w = frame.contentWindow;
+    const d = w.document;
+    const q = selector => d.querySelector(selector);
+    const zone = q('#restore-drop-zone');
+    const preview = q('#restore-preview');
+    const dialog = q('#settings-dialog');
+    const key = 'shiren6-rack-v1';
+    const evaluate = code => w.eval(code);
+    const call = (fn, text) => evaluate(`(${fn})(${JSON.stringify(text)})`);
+    const errorFrom = (fn, text) => {
+      try { call(fn, text); return ''; }
+      catch (error) { return error.message; }
+    };
+    const data = {version: 1, items: [{
+      type: 'weapon', name: '木刀', normal: true, blue: 10, gold: 8
+    }]};
+    const valid = JSON.stringify(data);
+    const accepts = text => !errorFrom('text => validateBackup(parseExternalJSON(text))', text);
+    const encoded = (key, value) => valid.replace('"version":1', `"version":1,"${key}":${value}`);
+    const deep = '['.repeat(5) + ']'.repeat(5);
+    const wide = '[' + '0,'.repeat(4100) + '0]';
+    const longString = '"' + 'x'.repeat(1025) + '"';
+    const tooManyBytes = '"' + 'あ'.repeat(666667) + '"';
+
+    check(accepts(valid), '部分バックアップを許可');
+    evaluate('Object.prototype.updatedAt = "inherited"');
+    try {
+      check(call('text => validateBackup(parseExternalJSON(text)).updatedAt', valid) === null,
+        '継承された日時を読み込まない');
+    } finally {
+      evaluate('delete Object.prototype.updatedAt');
+    }
+    const full = evaluate('JSON.stringify(createInitialState())');
+    check(accepts(full), '71種のIDとnullを含む書き出しを許可');
+    check(accepts(call('text => JSON.stringify(validateBackup(parseExternalJSON(text)))', valid)),
+      '復元結果を再度書き出して読み込める');
+    check(accepts(JSON.stringify({...data, updatedAt: '2025-01-01', items: [{...data.items[0], blue: '?', gold: null}]})),
+      '日時と未確認・未収集の値を許可');
+    check(accepts(valid.replace('木刀', '\\u6728\\u5200')), 'エスケープした装備名を許可');
+
+    const schemaFailures = [
+      ['エスケープした__proto__', encoded('\\u005f_proto__', '{"polluted":true}')],
+      ['エスケープしたconstructor', encoded('\\u0063onstructor', '{}')],
+      ['エスケープしたprototype', encoded('\\u0070rototype', '{}')],
+      ['rootの重複キー', encoded('\\u0076ersion', '1')],
+      ['itemの重複キー', valid.replace('"normal":true', '"normal":true,"\\u006eormal":false')],
+      ['未知の項目', valid.replace('"normal":true', '"constructor":{},"normal":true')],
+      ['XSS名', valid.replace('木刀', '<img src=x onerror=alert(1)>')],
+      ['末尾の不正文字', valid + 'x'], ['不正JSON', '{'],
+      ['不正な型', valid.replace('"normal":true', '"normal":1')],
+      ['必須項目なし', valid.replace('"normal":true,', '')],
+      ['過大な日時', JSON.stringify({...data, updatedAt: 'x'.repeat(65)})],
+      ['72項目', JSON.stringify({...data, items: Array(72).fill(data.items[0])})],
+      ['範囲外の補正', valid.replace('"blue":10', '"blue":2')]
+    ];
+    for (const [name, text] of schemaFailures) check(!accepts(text), name + 'を拒否');
+    check(evaluate('Object.prototype.polluted === undefined'), 'Object.prototypeは変更されない');
+    check(!errorFrom('text => migrateLegacy(parseExternalJSON(text))', valid.replace('"blue":10', '"blue":2')),
+      '旧保存の低い補正を移行');
+
+    check(!errorFrom('parseExternalJSON', '"' + '\\\\'.repeat(512) + '"'), 'エスケープを含む生文字列1024文字を許可');
+    check(errorFrom('parseExternalJSON', '"' + '\\\\'.repeat(512) + 'x"').includes('文字列が長すぎ'), 'エスケープを含む生文字列1025文字を拒否');
+
+    for (const [name, text] of [['深いJSON', deep], ['多数の要素', wide], ['長い文字列', longString]]) {
+      w.testInput = text;
+      evaluate('window.testNativeParse = JSON.parse; window.testFullParseCalls = 0; JSON.parse = function(text, ...args) { if (text === window.testInput) window.testFullParseCalls++; return window.testNativeParse.call(this, text, ...args); }');
+      try {
+        check(!!errorFrom('parseExternalJSON', text) && w.testFullParseCalls === 0,
+          name + 'をネイティブパーサー実行前に拒否');
+      } finally {
+        evaluate('JSON.parse = window.testNativeParse');
+      }
+    }
+
+    const limits = [
+      ['深さ', deep, '深すぎ', '[[[[]]]]'],
+      ['構造トークン', wide, '要素が多すぎ', '[' + '0,'.repeat(4094) + '0]'],
+      ['生文字列', longString, '文字列が長すぎ', '"' + 'x'.repeat(1024) + '"'],
+      ['UTF-8バイト', tooManyBytes, '大きすぎ', ' '.repeat(1999999) + '0']
+    ];
+    for (const [name, rejected, reason, accepted] of limits) {
+      check(errorFrom('parseExternalJSON', rejected).includes(reason), name + 'の上限をパーサーが拒否');
+      check(!errorFrom('parseExternalJSON', accepted), name + 'の上限内をパーサーが許可');
+    }
+
+    const file = (text = valid, name = 'backup.json') => new w.File([text], name, {type: 'application/json'});
+    function transfer(files) {
+      const dt = new w.DataTransfer();
+      files.forEach(item => dt.items.add(item));
+      return dt;
+    }
+    function drag(target, type, dt) {
+      const event = new w.DragEvent(type, {bubbles: true, cancelable: true, dataTransfer: dt});
+      target.dispatchEvent(event);
+      return event;
+    }
+    async function drop(files) {
+      drag(zone, 'drop', transfer(files));
+      await until(() => preview.textContent.trim());
+    }
+    const confirm = () => q('#confirm-restore');
+    q('#settings-btn').click();
+    await drop([file()]);
+    check(!!confirm() && !w.localStorage.getItem(key), 'ドロップでは確認のみ表示');
+    confirm().click();
+    const saved = JSON.parse(w.localStorage.getItem(key));
+    check(saved.items.length === 71 && saved.items[0].normal && saved.items[0].blue === 10,
+      '確認後に71種の記録を保存');
+    const original = w.localStorage.getItem(key);
+
+    for (const [name, text, reason] of [['深いJSON', deep, '深すぎ'], ['多数の要素', wide, '要素が多すぎ']]) {
+      await drop([file(text)]);
+      check(preview.className === 'error' && preview.textContent.includes(reason) && !confirm(),
+        name + 'を復元経路のパーサーで拒否');
+      w.testInput = text;
+      evaluate('window.testNativeParse = JSON.parse; window.testFullParseCalls = 0; JSON.parse = function(text, ...args) { if (text === window.testInput) window.testFullParseCalls++; return window.testNativeParse.call(this, text, ...args); }');
+      try {
+        w.dispatchEvent(new w.StorageEvent('storage', {key, newValue: text}));
+        check(w.testFullParseCalls === 0 && evaluate('state.items[0].blue') === 10 && w.localStorage.getItem(key) === original,
+          name + 'を別タブ経路でパース前に拒否し記録を保持');
+      } finally {
+        evaluate('JSON.parse = window.testNativeParse');
+      }
+    }
+    w.dispatchEvent(new w.StorageEvent('storage', {key, newValue: valid.replace('"blue":10', '"blue":5')}));
+    check(evaluate('state.items[0].blue') === 5, '正しい別タブ通知を反映');
+    w.dispatchEvent(new w.StorageEvent('storage', {key, newValue: original}));
+
+    const invalidFiles = [
+      ['JSON以外', [file('{}', 'other.csv')]], ['複数ファイル', [file(), file()]],
+      ['空の選択', []], ['壊れたJSON', [file('{broken')]],
+      ['スキーマ不正', [file('{}')]], ['2MB超', [file('x'.repeat(2000001))]],
+      ['範囲外の補正', [file(valid.replace('"blue":10', '"blue":11'))]]
+    ];
+    for (const [name, files] of invalidFiles) {
+      await drop(files);
+      check(preview.className === 'error' && !confirm(), name + 'を拒否');
+    }
+    check(w.localStorage.getItem(key) === original, 'エラー時に保存記録を保持');
+    await drop([file(valid, 'BACKUP.JSON')]);
+    check(!!confirm() && preview.className === '', '大文字拡張子で再試行');
+    const input = q('#restore-file');
+    let dt = transfer([file()]);
+    input.files = dt.files;
+    input.dispatchEvent(new w.Event('change'));
+    await until(() => !!confirm());
+    check(input.value === '', 'ファイル選択後に入力をリセット');
+    input.files = dt.files;
+    input.dispatchEvent(new w.Event('change'));
+    await until(() => !!confirm());
+    check(!!confirm(), '同じファイルを再選択できる');
+
+    dt = transfer([file()]);
+    drag(zone, 'dragenter', dt);
+    drag(zone.querySelector('span'), 'dragenter', dt);
+    drag(zone, 'dragleave', dt);
+    check(zone.classList.contains('is-dragging'), '子要素をまたいでもハイライトを維持');
+    drag(zone.querySelector('span'), 'dragleave', dt);
+    check(!zone.classList.contains('is-dragging'), '領域外でハイライトを解除');
+    check(drag(dialog, 'dragover', dt).defaultPrevented && drag(dialog, 'drop', dt).defaultPrevented,
+      '領域外のドロップによる画面遷移を防止');
+    const directory = new w.Event('drop', {bubbles: true, cancelable: true});
+    Object.defineProperty(directory, 'dataTransfer', {value: {
+      types: ['Files'], files: [], items: [{kind: 'file', webkitGetAsEntry: () => ({isDirectory: true})}]
+    }});
+    zone.dispatchEvent(directory);
+    check(preview.textContent.includes('フォルダ'), 'フォルダを拒否');
+
+    let resolveSlow;
+    const slow = file();
+    Object.defineProperty(slow, 'text', {value: () => new Promise(resolve => { resolveSlow = resolve; })});
+    drag(zone, 'drop', transfer([slow]));
+    await drop([file('{}')]);
+    evaluate('window.testParseCalls = 0; window.testOriginalParser = parseExternalJSON; parseExternalJSON = text => { window.testParseCalls++; return window.testOriginalParser(text); }');
+    resolveSlow(valid);
+    await tick();
+    check(!confirm() && preview.className === 'error' && w.testParseCalls === 0,
+      '古い読込はパーサー実行前に破棄');
+    evaluate('parseExternalJSON = window.testOriginalParser');
+    let resolveClose;
+    const closing = file();
+    Object.defineProperty(closing, 'text', {value: () => new Promise(resolve => { resolveClose = resolve; })});
+    drag(zone, 'drop', transfer([closing]));
+    dialog.close();
+    await tick();
+    resolveClose(valid);
+    await tick();
+    check(!confirm() && preview.textContent === '', 'ダイアログ終了時に読込を破棄');
+    q('#settings-btn').click();
+    await drop([file()]);
+    const old = confirm();
+    await drop([file('{}')]);
+    old.click();
+    check(w.localStorage.getItem(key) === original, '古い確認ボタンを無効化');
+
+    w.localStorage.removeItem(key);
+  } catch (error) {
+    const li = document.createElement('li');
+    li.className = 'fail';
+    li.textContent = 'ERROR: ' + error.stack;
+    results.append(li);
+    failed++;
+  }
+  document.querySelector('#summary').textContent = `完了: ${passed} passed / ${failed} failed`;
+};
+</script>
