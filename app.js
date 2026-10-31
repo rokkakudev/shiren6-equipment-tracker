@@ -135,53 +135,92 @@ let state = createInitialState(),
   pendingRestore = null,
   toastTimer, storageReady = true;
 
-// バックアップの検証と旧形式の移行
-function validateBackup(data) {
-  if (!data || data.version !== 1 || !Array.isArray(data.items) || data.items.length < 1 || data
-    .items.length > 2000) throw Error('対応するバックアップファイルではありません。');
+// 外部入力はネイティブパーサーの前に資源量と重複キーを検査する。
+// 上限: UTF-8 2,000,000 bytes、深さ4、構造トークン4,096、文字列1,024 code units。
+function parseExternalJSON(text) {
+  if (typeof text !== 'string' || text.length > 2000000 ||
+      new TextEncoder().encode(text).length > 2000000) throw Error('JSONデータが大きすぎます。');
+  const stack = [];
+  let tokens = 0;
+  for (let pos = 0; pos < text.length; pos++) {
+    const c = text[pos];
+    if (c === '"') {
+      const start = pos++;
+      while (pos < text.length && text[pos] !== '"') {
+        if (text[pos] === '\\') pos++;
+        pos++;
+        if (pos - start - 1 > 1024) throw Error('JSONの文字列が長すぎます。');
+      }
+      if (pos - start - 1 > 1024) throw Error('JSONの文字列が長すぎます。');
+      let next = pos + 1;
+      while (next < text.length && /[\x20\t\r\n]/.test(text[next])) next++;
+      if (text[next] === ':' && stack.length && stack[stack.length - 1] instanceof Set) {
+        const key = JSON.parse(text.slice(start, pos + 1));
+        const keys = stack[stack.length - 1];
+        if (keys.has(key)) throw Error('JSONに重複したキーがあります。');
+        keys.add(key);
+      }
+      tokens++;
+    } else if (c === '{' || c === '[') {
+      stack.push(c === '{' ? new Set() : null);
+      if (stack.length > 4) throw Error('JSONの入れ子が深すぎます。');
+      tokens++;
+    } else if (c === '}' || c === ']') {
+      stack.pop();
+      tokens++;
+    } else if (c === ',' || c === ':') tokens++;
+    if (tokens > 4096) throw Error('JSONの要素が多すぎます。');
+  }
+  return JSON.parse(text);
+}
+
+function validateBackup(data, legacy = false) {
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype;
+  const fields = (value, required, allowed) => object(value) &&
+    required.every(key => Object.hasOwn(value, key)) && Object.keys(value).every(key => allowed.includes(key));
+  if (!fields(data, ['version', 'items'], ['version', 'items', 'updatedAt']) || data.version !== 1 ||
+      !Array.isArray(data.items) || data.items.length < 1 || data.items.length > 71 ||
+      (Object.hasOwn(data, 'updatedAt') && data.updatedAt !== null &&
+       (typeof data.updatedAt !== 'string' || data.updatedAt.length > 64)))
+    throw Error('対応するバックアップファイルではありません。');
   const seen = new Set();
+  let changed = 0;
   const items = data.items.map(i => {
-    if (!i || !['weapon', 'shield'].includes(i.type) || typeof i.name !== 'string' || !i.name
-      .trim() || i.name.trim().length > 60 || typeof i.normal !== 'boolean') throw Error(
-      '装備データの形式が正しくありません。');
-    for (const kind of ['blue', 'gold'])
-      if (i[kind] !== null && i[kind] !== '?' && !(Number.isInteger(i[kind]) && i[kind] >=
-          MIN_BONUS[kind] && i[kind] <= MAX_BONUS[kind])) throw Error('補正値の範囲が正しくありません。');
-    const clean = {
-      ...createEquipment(i.type, i.name.trim()),
-      normal: i.normal,
-      blue: i.blue,
-      gold: i.gold
-    };
+    if (!fields(i, ['type', 'name', 'normal', 'blue', 'gold'],
+        ['id', 'type', 'name', 'normal', 'blue', 'gold']) ||
+        !['weapon', 'shield'].includes(i.type) || typeof i.name !== 'string' || !i.name.trim() ||
+        i.name.trim().length > 60 || typeof i.normal !== 'boolean')
+      throw Error('装備データの形式が正しくありません。');
+    const clean = createEquipment(i.type, i.name.trim());
+    if (Object.hasOwn(i, 'id') && (typeof i.id !== 'string' || i.id !== clean.id))
+      throw Error('装備データの形式が正しくありません。');
+    clean.normal = i.normal;
+    for (const kind of ['blue', 'gold']) {
+      let value = i[kind];
+      if (legacy && Number.isInteger(value) && value >= 0 && value < MIN_BONUS[kind]) {
+        value = '?';
+        changed++;
+      }
+      if (value !== null && value !== '?' && !(Number.isInteger(value) && value >=
+          MIN_BONUS[kind] && value <= MAX_BONUS[kind])) throw Error('補正値の範囲が正しくありません。');
+      clean[kind] = value;
+    }
     if (!equipmentIds.has(clean.id)) throw Error('武器38種・盾33種以外の装備は取り込めません。');
     if (seen.has(clean.id)) throw Error('同じ装備が重複しています。');
     seen.add(clean.id);
     return clean;
   });
-  return {
+  const result = {
     version: 1,
-    updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : null,
-    // 一部の装備だけを含むバックアップでも、一覧は固定の71種に揃える。
+    updatedAt: Object.hasOwn(data, 'updatedAt') ? data.updatedAt : null,
     items: createInitialState().items.map(item => items.find(saved => saved.id === item.id) ?? item)
   };
+  return legacy ? {data: result, changed} : result;
 }
 
 function migrateLegacy(data) {
-  const migrated = structuredClone(data);
-  let changed = 0;
-  if (migrated?.version === 1 && Array.isArray(migrated.items))
-    for (const i of migrated.items) {
-      if (!i) continue;
-      for (const kind of ['blue', 'gold'])
-        if (Number.isInteger(i[kind]) && i[kind] >= 0 && i[kind] < MIN_BONUS[kind]) {
-          i[kind] = '?';
-          changed++;
-        }
-    }
-  return {
-    data: validateBackup(migrated),
-    changed
-  };
+  return validateBackup(data, true);
 }
 
 // ブラウザ保存。読み込みに失敗した場合は元データの上書きを防ぐ
@@ -196,7 +235,7 @@ function storageWarning(message) {
 try {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
-    const migrated = migrateLegacy(JSON.parse(raw));
+    const migrated = migrateLegacy(parseExternalJSON(raw));
     state = migrated.data;
     legacyCount = migrated.changed;
   }
@@ -498,8 +537,9 @@ async function previewRestore(files, hasDirectory = false) {
     const file = files[0];
     if (!/\.json$/i.test(file.name)) throw Error('JSONファイルを選んでください。');
     if (file.size > 2000000) throw Error('ファイルが大きすぎます。');
-    const data = JSON.parse(await file.text());
+    const text = await file.text();
     if (attempt !== restoreAttempt) return;
+    const data = parseExternalJSON(text);
     pendingRestore = validateBackup(data);
     restorePreview.innerHTML =
       `<div class="import-preview">${pendingRestore.items.length} 種のバックアップを読み込みました。現在の記録をすべて置き換えます。</div><button class="wide primary" id="confirm-restore">このバックアップで復元する</button>`;
@@ -689,7 +729,7 @@ $('#preview-import').onclick = () => {
 window.addEventListener('storage', e => {
   if (e.key !== STORAGE_KEY || !e.newValue) return;
   try {
-    state = validateBackup(JSON.parse(e.newValue));
+    state = validateBackup(parseExternalJSON(e.newValue));
     render();
     toast('別のタブの記録を反映しました');
   } catch {

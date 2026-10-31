@@ -85,3 +85,7 @@ Cloudflare Pagesなど、静的ファイルを配信できるサービスで公�
 
 - 初期装備リスト：[風来のシレン6 装備品かけチェック](https://gif-hara.github.io/shiren6_equipment_rack/)
 - 補正値の調査：[えまのんの雑記「神器についての調査」](https://eminaemanon.hatenablog.com/entry/2024/06/23/%E3%80%90%E3%82%B7%E3%83%AC%E3%83%B36%E3%80%91%E7%A5%9E%E5%99%A8%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6%E3%81%AE%E8%AA%BF%E6%9F%BB)
+
+## JSONの安全性とテスト
+
+入力境界、制限、残る制約は[JSON取扱いのセキュリティ評価](docs/security-review.md)を参照してください。復元と入力検証の回帰テストは `python3 tests/serve.py` を実行し、表示されたURLをブラウザで開き、ページ内の4つの起動時テストリンクもそれぞれ開いて結果を確認します。一時コピーをランダムポートで配信し、通常のサイトの保存データには触れません。
